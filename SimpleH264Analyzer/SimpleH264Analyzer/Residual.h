@@ -1,6 +1,16 @@
 #ifndef _RESIDUAL_H_
 #define _RESIDUAL_H_
 
+//! Dequantization coefficients
+const int dequant_coef[6][4][4] = {
+	{ { 10, 13, 10, 13 }, { 13, 16, 13, 16 }, { 10, 13, 10, 13 }, { 13, 16, 13, 16 } },
+	{ { 11, 14, 11, 14 }, { 14, 18, 14, 18 }, { 11, 14, 11, 14 }, { 14, 18, 14, 18 } },
+	{ { 13, 16, 13, 16 }, { 16, 20, 16, 20 }, { 13, 16, 13, 16 }, { 16, 20, 16, 20 } },
+	{ { 14, 18, 14, 18 }, { 18, 23, 18, 23 }, { 14, 18, 14, 18 }, { 18, 23, 18, 23 } },
+	{ { 16, 20, 16, 20 }, { 20, 25, 20, 25 }, { 16, 20, 16, 20 }, { 20, 25, 20, 25 } },
+	{ { 18, 23, 18, 23 }, { 23, 29, 23, 29 }, { 18, 23, 18, 23 }, { 23, 29, 23, 29 } }
+};
+
 typedef struct Coeff4x4Block
 {
 	bool   emptyBlock;
@@ -37,6 +47,7 @@ public:
 	UINT8 Get_sub_block_number_coeffs(int block_idc_x, int block_idc_y);
 	UINT8 Get_sub_block_number_coeffs_chroma(int component, int block_idc_x, int block_idc_y);
 	void Restore_coeff_matrix();
+	void Inverse_transform();
 
 	void  Dump_residual_luma(int blockType);
 	void  Dump_residual_chroma(UINT8 cbp_chroma);
@@ -50,8 +61,13 @@ private:
 	UINT32 m_bypeOffset;
 	UINT8  m_bitOffset;
 
-	int m_coeff_matrix_luma[16][16];
-	int m_coeff_matrix_chroma[2][8][8];
+	int m_qp;
+
+	int m_coeff_matrix_luma[16][4][4];
+	int m_coeff_matrix_chroma[2][4][4][4];
+
+	int m_residual_matrix_luma[16][4][4];
+	int m_residual_matrix_chroma[2][4][4][4];
 
 	Coeff4x4Block luma_residual[4][4];
 	Coeff4x4Block chroma_DC_residual[2];
@@ -79,8 +95,15 @@ private:
 
 	int search_for_value_in_2D_table(UINT8 &value1, UINT8 &value2, int &code, int *lengthTable, int *codeTable, int tableWidth, int tableHeight);
 
-	void restore_8x8_coeff_block(int (*matrix)[16], int idx, int blockType);
-	void insert_matrix(int(*matrix)[16], int *block, int start, int maxCoeffNum, int x, int y);
+	void restore_8x8_coeff_block_luma(int (*matrix)[4][4], int idx, int blockType);
+	void restore_8x8_coeff_block_chroma_AC(int (*matrix)[4][4][4], int idx);
+	void restore_8x8_coeff_block_chroma_DC(int (*matrix)[4][4][4], int idx);
+
+	void restore_16x16_coeff_block_luma_DC(int(*matrix)[4][4]);
+
+	void insert_matrix(int(*matrix)[4][4], int *block, int start, int maxCoeffNum, int x, int y);
+
+	void coeff_invers_transform(int (*coeff_buf)[4], int(*residual_buf)[4]);
 };
 
 #endif

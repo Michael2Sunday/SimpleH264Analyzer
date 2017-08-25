@@ -64,6 +64,7 @@ public:
 	UINT8  m_mb_type;
 	UINT8  m_cbp_luma;
 	UINT8  m_cbp_chroma;
+	int  m_mb_qp;
 	int  m_intra16x16PredMode;
 
 private:
@@ -82,7 +83,7 @@ private:
 	UINT8  m_intra_chroma_pred_mode;
 
 	UINT8  m_coded_block_pattern;
-	UINT8  m_mb_qp_delta;
+	int  m_mb_qp_delta;
 
 	CResidual *m_residual;
 

@@ -133,6 +133,7 @@ UINT32 CMacroblock::Parse_macroblock()
 	if (m_cbp_luma > 0 || m_cbp_chroma > 0 || (m_mb_type > 0 && m_mb_type < 25))
 	{
 		m_mb_qp_delta = Get_sev_code_num(m_pSODB, m_bypeOffset, m_bitOffset);
+		m_mb_qp = m_pps_active->Get_pic_init_qp() + m_slice->m_sliceHeader->Get_slice_qp_delta() + m_mb_qp_delta;
 	}
 
 	// Êä³ömb headerÐÅÏ¢
@@ -144,10 +145,7 @@ UINT32 CMacroblock::Parse_macroblock()
 		m_residual = new CResidual(m_pSODB, m_bypeOffset * 8 + m_bitOffset, this);
 		m_residual->Parse_macroblock_residual(residualLength);
 
-		if (m_mb_idx == 0)// to be deleted
-		{
-			m_residual->Restore_coeff_matrix();
-		}
+		m_residual->Restore_coeff_matrix();
 	}
 
 	m_mbDataSize = m_bypeOffset * 8 + m_bitOffset - m_mbDataSize + residualLength;
