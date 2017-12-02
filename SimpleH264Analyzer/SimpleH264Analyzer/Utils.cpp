@@ -119,22 +119,22 @@ int Extract_single_nal_unit(const char* fileName, UINT8 *nalBuf, UINT32 nalLen)
 
 int block_index_to_position(UINT8 blkIdx, UINT8 &block_pos_row, UINT8 &block_pos_column)
 {
-	/*
-	block8_index of each index:			block4_index of each index:
+/*
+block8_index of each index:			block4_index of each index:
 	row:  0   1   2   3					row:  0   1   2   3
-	_______________					 _______________
-	col:0	| 0 | 0 | 1 | 1 |			col:0	| 0 | 1 | 0 | 1 |
+		 _______________					 _______________
+col:0	| 0 | 0 | 1 | 1 |			col:0	| 0 | 1 | 0 | 1 |
 	1	| 0 | 0 | 1 | 1 |				1	| 2 | 3 | 2 | 3 |
 	2	| 2 | 2 | 3 | 3 |				2	| 0 | 1 | 0 | 1 |
 	3	| 2 | 2 | 3 | 3 |				3	| 2 | 3 | 2 | 3 |
-	*/
+*/
 	UINT8 block8_idx = blkIdx / 4, block4_index = blkIdx % 4; /* 0 1 2 3 */
 
 	/*
 	(block_row, block_column) of each index:
 	row:    0       1       2       3
-	_______________ _______________
-	col:0	| (0,0) | (1,0) | (0,0) | (1,0) |
+		 _______________ _______________
+col:0	| (0,0) | (1,0) | (0,0) | (1,0) |
 	1	| (0,1) | (1,1) | (0,1) | (1,1) |
 	2	| (0,0) | (1,0) | (0,0) | (1,0) |
 	3	| (0,1) | (1,1) | (0,1) | (1,1) |
@@ -144,8 +144,8 @@ int block_index_to_position(UINT8 blkIdx, UINT8 &block_pos_row, UINT8 &block_pos
 	/*
 	(block_row, block_column) of each index:
 	row:    0       1       2       3
-	_______________ _______________
-	col:0	| (0,0) | (1,0) | (2,0) | (3,0) |
+		 _______________ _______________
+col:0	| (0,0) | (1,0) | (2,0) | (3,0) |
 	1	| (0,1) | (1,1) | (2,1) | (3,1) |
 	2	| (0,2) | (1,2) | (2,2) | (3,2) |
 	3	| (0,3) | (1,3) | (2,3) | (3,3) |
