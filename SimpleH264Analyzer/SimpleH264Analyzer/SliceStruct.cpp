@@ -68,7 +68,7 @@ int CSliceStruct::Parse()
 		m_macroblocks[idx]->Set_slice_struct(this);
 
 		macroblockOffset += m_macroblocks[idx]->Parse_macroblock();
-		m_macroblocks[idx]->Decode_macroblock();
+//		m_macroblocks[idx]->Decode_macroblock();
 	}
 	
 	return kPARSING_ERROR_NO_ERROR;
