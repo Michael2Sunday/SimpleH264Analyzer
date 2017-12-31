@@ -21,21 +21,29 @@ CResidual::CResidual(UINT8 *pSODB, UINT32 offset, CMacroblock *mb)
 	m_bypeOffset = offset / 8;
 	m_bitOffset = offset % 8;
 
-	for (int i = 0; i < 16; i++)
+	for (int idx = 0; idx < 16; idx++)
 	{
-		for (int j = 0; j < 16; j++)
+		for (int i = 0; i < 16; i++)
 		{
-			m_coeff_matrix_luma[i][j] = 0;
+			for (int j = 0; j < 16; j++)
+			{
+				m_coeff_matrix_luma[idx][i][j] = 0;
+				m_residual_matrix_luma[idx][i][j] = 0;
+			}
 		}
 	}
 
 	for (int chrIdx = 0; chrIdx < 2; chrIdx++)
 	{
-		for (int i = 0; i < 8; i++)
+		for (int idx = 0; idx < 4; idx++)
 		{
-			for (int j = 0; j < 8; j++)
+			for (int i = 0; i < 4; i++)
 			{
-				m_coeff_matrix_chroma[chrIdx][i][j] = 0;
+				for (int j = 0; j < 4; j++)
+				{
+					m_coeff_matrix_chroma[chrIdx][idx][i][j] = 0;
+					m_residual_matrix_chroma[chrIdx][idx][i][j] = 0;
+				}
 			}
 		}
 	}
@@ -50,6 +58,8 @@ int CResidual::Parse_macroblock_residual(UINT32 &dataLength)
 	UINT8 cbp_luma = m_macroblock_belongs->m_cbp_luma;
 	UINT8 cbp_chroma = m_macroblock_belongs->m_cbp_chroma;
 	UINT32 originOffset = 8 * m_bypeOffset + m_bitOffset;
+
+	m_qp = m_macroblock_belongs->m_mb_qp;
 
 	if (m_macroblock_belongs->m_mb_type == I16MB)
 	{
@@ -112,20 +122,49 @@ UINT8 CResidual::Get_sub_block_number_coeffs_chroma(int component, int block_idc
 void CResidual::Restore_coeff_matrix()
 {
 	UINT8 cbp_luma = m_macroblock_belongs->m_cbp_luma;
-	UINT8 cbp_chroma = m_macroblock_belongs->m_cbp_chroma;
-
 	if (m_macroblock_belongs->m_mb_type == I4MB)
 	{
 		for (int blk8Idx = 0; blk8Idx < 4; blk8Idx++)
 		{
-			int rowIdxStart = 8 * (blk8Idx % 2), columnIdxStart = 8 * (blk8Idx / 2);
 			if (cbp_luma & (1 << blk8Idx))
 			{
-				restore_8x8_coeff_block(m_coeff_matrix_luma, blk8Idx, LUMA);
+				restore_8x8_coeff_block_luma(m_coeff_matrix_luma, blk8Idx, LUMA);
+			}
+		}
+	}
+	else if (m_macroblock_belongs->m_mb_type == I16MB)
+	{
+		restore_16x16_coeff_block_luma_DC(m_coeff_matrix_luma);
+		for (int blk8Idx = 0; blk8Idx < 4; blk8Idx++)
+		{
+			if (cbp_luma & (1 << blk8Idx))
+			{
+				restore_8x8_coeff_block_luma(m_coeff_matrix_luma, blk8Idx, LUMA_INTRA16x16AC);
 			}
 		}
 	}
 	
+	UINT8 cbp_chroma = m_macroblock_belongs->m_cbp_chroma;
+	if (cbp_chroma > 0)
+	{
+		for (int blk8Idx = 0; blk8Idx < 2; blk8Idx++)
+		{
+			restore_8x8_coeff_block_chroma_DC(m_coeff_matrix_chroma, blk8Idx);
+		}
+
+		if (cbp_chroma > 1)
+		{
+			for (int chrIdx = 0; chrIdx < 2; chrIdx++)
+			{
+				restore_8x8_coeff_block_chroma_AC(m_coeff_matrix_chroma, chrIdx);
+			}
+		}
+	}
+}
+
+void CResidual::Inverse_transform()
+{
+
 }
 
 void CResidual::Dump_residual_luma(int blockType)
@@ -1035,22 +1074,24 @@ found:
 	return err;
 }
 
-void CResidual::restore_8x8_coeff_block(int (*matrix)[16], int idx, int blockType)
+void CResidual::restore_8x8_coeff_block_luma(int(*matrix)[4][4], int idx, int blockType)
 {
-	int max_coeff_num = 0;
+	int start_pos = 0, max_coeff_num = 0;
 	switch (blockType)
 	{
 	case LUMA:
+		start_pos = 0;
 		max_coeff_num = 16;
 		break;
-	case LUMA_INTRA16x16DC:
-		max_coeff_num = 16;
-		break;
+// 	case LUMA_INTRA16x16DC:
+// 		max_coeff_num = 16;
+// 		break;
 	case LUMA_INTRA16x16AC:
+		start_pos = 1;
 		max_coeff_num = 15;
 		break;
 	default:
-		break;
+		return;
 	}
 
 	int blkRowIdxStart = 2 * (idx / 2), blkColumnIdxStart = 2 * (idx % 2);
@@ -1083,8 +1124,113 @@ void CResidual::restore_8x8_coeff_block(int (*matrix)[16], int idx, int blockTyp
 			}
 			swap(coeffBuf[0], coeffBuf[totalZeros]);
 
-			insert_matrix(m_coeff_matrix_luma, coeffBuf, 0, 16, columnIdx, rowIdx);
+			insert_matrix(m_coeff_matrix_luma, coeffBuf, start_pos, max_coeff_num, columnIdx, rowIdx);
+
+//			coeff_invers_transform(m_coeff_matrix_luma[4 * rowIdx + columnIdx], m_residual_matrix_luma[4 * rowIdx + columnIdx]);
 		}
+	}
+}
+
+void CResidual::restore_8x8_coeff_block_chroma_AC(int(*matrix)[4][4][4], int idx)
+{
+	int coeffBuf[15] = { 0 };
+	for (int rowIdx = 0; rowIdx < 2; rowIdx++)
+	{
+		for (int columnIdx = 0; columnIdx < 2; columnIdx++)
+		{
+			UINT8 numCoeff = chroma_AC_residual[idx][rowIdx][columnIdx].numCoeff;
+			UINT8 trailingOnes = chroma_AC_residual[idx][rowIdx][columnIdx].trailingOnes, trailingLeft = trailingOnes;
+			UINT8 totalZeros = chroma_AC_residual[idx][rowIdx][columnIdx].totalZeros;
+
+			// write trailing ones
+			for (int i = numCoeff - 1, j = trailingOnes - 1; j >= 0; j--)
+			{
+				coeffBuf[i--] = chroma_AC_residual[idx][rowIdx][columnIdx].trailingSign[j];
+			}
+
+			// write levels
+			for (int i = numCoeff - trailingOnes - 1; i >= 0; i--)
+			{
+				coeffBuf[i] = chroma_AC_residual[idx][rowIdx][columnIdx].levels[numCoeff - trailingOnes - 1 - i];
+			}
+
+			// move levels with run_before
+			for (int i = numCoeff - 1; i > 0; i--)
+			{
+				swap(coeffBuf[i], coeffBuf[i + totalZeros]);
+				totalZeros -= chroma_AC_residual[idx][rowIdx][columnIdx].runBefore[i];
+			}
+
+			// insert coeffBuf......
+			insert_matrix(matrix[idx], coeffBuf, 1, 15, columnIdx, rowIdx);
+		}
+	}
+}
+
+void CResidual::restore_8x8_coeff_block_chroma_DC(int(*matrix)[4][4][4], int idx)
+{
+	UINT8 numCoeff = chroma_DC_residual[idx].numCoeff;
+	UINT8 trailingOnes = chroma_DC_residual[idx].trailingOnes, trailingLeft = trailingOnes;
+	UINT8 totalZeros = chroma_DC_residual[idx].totalZeros;
+	int coeffBuf[4] = { 0 };
+
+	// write trailing ones
+	for (int i = numCoeff - 1, j = trailingOnes - 1; j >= 0; j--)
+	{
+		coeffBuf[i--] = chroma_DC_residual[idx].trailingSign[j];
+	}
+
+	// write levels
+	for (int i = numCoeff - trailingOnes - 1; i >= 0; i--)
+	{
+		coeffBuf[i] = chroma_DC_residual[idx].levels[numCoeff - trailingOnes - 1 - i];
+	}
+
+	// move levels with run_before
+	for (int i = numCoeff - 1; i > 0; i--)
+	{
+		swap(coeffBuf[i], coeffBuf[i + totalZeros]);
+		totalZeros -= chroma_DC_residual[idx].runBefore[i];
+	}
+
+	// insert coeffBuf......
+	for (int pos = 0; pos < 4; pos++)
+	{
+		m_coeff_matrix_chroma[idx][pos][0][0] = coeffBuf[pos];
+	}
+}
+
+void CResidual::restore_16x16_coeff_block_luma_DC(int(*matrix)[4][4])
+{
+	UINT8 numCoeff = luma_residual16x16_DC.numCoeff;
+	UINT8 trailingOnes = luma_residual16x16_DC.trailingOnes, trailingLeft = trailingOnes;
+	UINT8 totalZeros = luma_residual16x16_DC.totalZeros;
+	int coeffBuf[16] = { 0 };
+
+	// write trailing ones
+	for (int i = numCoeff - 1, j = trailingOnes - 1; j >= 0; j--)
+	{
+		coeffBuf[i--] = luma_residual16x16_DC.trailingSign[j];
+	}
+
+	// write levels
+	for (int i = numCoeff - trailingOnes - 1; i >= 0; i--)
+	{
+		coeffBuf[i] = luma_residual16x16_DC.levels[numCoeff - trailingOnes - 1 - i];
+	}
+
+	// move levels with run_before
+	for (int i = numCoeff - 1; i > 0; i--)
+	{
+		swap(coeffBuf[i], coeffBuf[i + totalZeros]);
+		totalZeros -= luma_residual16x16_DC.runBefore[i];
+	}
+	swap(coeffBuf[0], coeffBuf[totalZeros]);
+
+	// insert coeffBuf......
+	for (int pos = 0; pos < 16; pos++)
+	{
+		m_coeff_matrix_luma[pos][0][0] = coeffBuf[pos];
 	}
 }
 
@@ -1096,15 +1242,86 @@ const int SNGL_SCAN[16][2] =
 	{ 3, 1 }, { 3, 2 }, { 2, 3 }, { 3, 3 }
 };
 
-void CResidual::insert_matrix(int(*matrix)[16], int *block, int start, int maxCoeffNum, int x, int y)
+void CResidual::insert_matrix(int(*matrix)[4][4], int *block, int start, int maxCoeffNum, int x, int y)
 {
-	int row = 0, column = 0, startX = 4 * x, startY = 4 * y;
+	int qp_per = m_qp / 6, qp_rem = m_qp % 6;
+	int row = 0, column = 0, block_index = x + 4 * y, startX = start / 4, startY = start % 4;
+	int coeff_buf[4][4] = { 0 }, residual_buf[4][4] = { 0 };
 	for (int idx = 0, pos0 = start; idx < maxCoeffNum && pos0 < 16; idx++)
 	{
-		row = SNGL_SCAN[pos0][0] + startY;
-		column = SNGL_SCAN[pos0][1] + startX;
-		matrix[row][column] = block[idx];
+		row = SNGL_SCAN[pos0][0];
+		column = SNGL_SCAN[pos0][1];
+		matrix[block_index][row + startY][column + startX] = block[idx] * dequant_coef[qp_rem][row][column] << qp_per;
 		pos0++;
+	}
+
+	// Debug >
+// 	printf("\nBlock( %d , %d ):\n", x, y);
+// 	for (int a = 0; a < 4; a++)
+// 	{
+// 		for (int b = 0; b < 4; b++)
+// 		{
+// 			printf("%4d\t", matrix[block_index][a][b]);
+// 		}
+// 		printf("\n");
+// 	}
+	// Debug <
+
+//	coeff_invers_transform(coeff_buf, residual_buf);
+	
+// 	for (int m = 0; m < 4; m++)
+// 	{
+// 		for (int n = 0; n < 4; n++)
+// 		{
+// 			matrix[block_index][m][n] = residual_buf[m][n];
+// 		}
+// 	}
+}
+
+void CResidual::coeff_invers_transform(int(*coeff_buf)[4], int(*residual_buf)[4])
+{
+	int temp1[4] = { 0 }, temp2[4] = { 0 };
+
+	// horizontal-trans
+	for (int j = 0; j < 4; j++)
+	{
+		for (int i = 0; i < 4; i++)
+		{
+			temp1[i] = coeff_buf[i][j];
+		}
+
+		temp2[0] = (temp1[0] + temp1[2]);
+		temp2[1] = (temp1[0] - temp1[2]);
+		temp2[2] = (temp1[1] >> 1) - temp1[3];
+		temp2[3] = temp1[1] + (temp1[3] >> 1);
+
+		for (int i = 0; i < 2; i++)
+		{
+			int i1 = 3 - i;
+			residual_buf[i][j] = temp2[i] + temp2[i1];
+			residual_buf[i1][j] = temp2[i] - temp2[i1];
+		}
+	}
+
+	// vertical-trans
+	for (int i = 0; i < 4; i++)
+	{
+		for (int j = 0; j < 4; j++)
+		{
+			temp1[j] = residual_buf[i][j];
+		}
+
+		temp2[0] = (temp1[0] + temp1[2]);
+		temp2[1] = (temp1[0] - temp1[2]);
+		temp2[2] = (temp1[1] >> 1) - temp1[3];
+		temp2[3] = temp1[1] + (temp1[3] >> 1);
+
+		for (int j = 0; j < 2; j++)
+		{
+			int j1 = 3 - j;
+			residual_buf[i][j] = temp2[j] + temp2[j1];
+			residual_buf[i][j1] = temp2[j] - temp2[j1];
+		}
 	}
 }
 
